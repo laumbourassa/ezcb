@@ -258,7 +258,7 @@ typedef struct ezcb_evt
 static volatile uint8_t ezcb_evt_head;
 static volatile uint8_t ezcb_evt_tail;
 static ezcb_evt_t ezcb_evt_queue[EZCB_EVENT_QUEUE_SIZE];
-#endif
+#endif  /* EZCB_ENABLE_ISR*/
 
 /****************************************************************
  * Hash table state
@@ -379,7 +379,6 @@ void ezcb_deinit(void)
 {
     if (!ezcb_table) return;
 
-    /* Free all nodes in all buckets */
     for (size_t i = 0; i < ezcb_buckets; i++)
     {
         ezcb_node_t* n = ezcb_table[i];
@@ -387,7 +386,6 @@ void ezcb_deinit(void)
         {
             ezcb_node_t* next = n->next;
 #ifdef EZCB_NO_MALLOC
-            /* Return node to free list */
             n->next = ezcb_free_list;
             ezcb_free_list = n;
 #else
@@ -399,20 +397,17 @@ void ezcb_deinit(void)
     }
 
 #ifndef EZCB_NO_MALLOC
-    /* Free the hash table itself */
     free(ezcb_table);
-#endif
+#endif  /* EZCB_NO_MALLOC */
 
-    /* Reset global state */
     ezcb_table   = NULL;
     ezcb_buckets = 0;
     ezcb_count   = 0;
 
 #ifdef EZCB_ENABLE_ISR
-    /* Reset ISR queue */
     ezcb_evt_head = 0;
     ezcb_evt_tail = 0;
-#endif
+#endif  /* EZCB_ENABLE_ISR */
 }
 
 /****************************************************************
@@ -616,7 +611,7 @@ int ezcb_trigger_isr(
 {
     uint8_t next = (ezcb_evt_head + 1) % EZCB_EVENT_QUEUE_SIZE;
 
-    if (next == ezcb_evt_tail) return -1; /* queue full */
+    if (next == ezcb_evt_tail) return -1;
 
     ezcb_evt_queue[ezcb_evt_head].trigger = trigger;
     ezcb_evt_queue[ezcb_evt_head].data = data;
