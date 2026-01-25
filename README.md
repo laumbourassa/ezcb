@@ -30,7 +30,7 @@
 #include "ezcb.h"
 ```
 
-2. Include the header (anywhere necesarry):
+2. Include the header (anywhere necesary):
 
 ```c
 #include "ezcb.h"
