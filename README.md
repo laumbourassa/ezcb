@@ -23,16 +23,17 @@
 
 ## Quick Start
 
-1. Include the header:
+1. Implement the library (in exactly one source file):
 
 ```c
+#define EZCB_IMPLEMENTATION
 #include "ezcb.h"
 ```
 
-2. Initialize the system (optional — ezcb_init() is called automatically on first use, but explicit init/deinit is recommended in some environments):
+2. Include the header (anywhere necesarry):
 
 ```c
-ezcb_init();
+#include "ezcb.h"
 ```
 
 3. Register callbacks and trigger events:
