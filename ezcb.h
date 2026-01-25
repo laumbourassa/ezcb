@@ -46,6 +46,9 @@
 #ifndef EZCB_MAX_NODES
 #define EZCB_MAX_NODES 64
 #endif
+#ifndef EZCB_MAX_TRIGGER_LENGTH
+#define EZCB_MAX_TRIGGER_LENGTH 32
+#endif
 #endif  /* EZCB_NO_MALLOC */
 
 /* Event queue size for ISR support */
@@ -239,13 +242,29 @@ void ezcb_dispatch(void);
 typedef struct ezcb_node ezcb_node_t;
 typedef struct ezcb_node
 {
-    const char* trigger;
+#ifdef EZCB_NO_MALLOC
+    char trigger[EZCB_MAX_TRIGGER_LENGTH];
+#else
+    char* trigger;
+#endif
     uint8_t priority;
     bool once;
     ezcb_fn_t fn;
     void* ctx;
     ezcb_node_t* next;
 } ezcb_node_t;
+
+#ifdef EZCB_ENABLE_ISR
+typedef struct ezcb_evt
+{
+    const char* trigger;
+    void* data;
+} ezcb_evt_t;
+
+static volatile uint8_t ezcb_evt_head;
+static volatile uint8_t ezcb_evt_tail;
+static ezcb_evt_t ezcb_evt_queue[EZCB_EVENT_QUEUE_SIZE];
+#endif
 
 /****************************************************************
  * Hash table state
@@ -298,6 +317,8 @@ static void ezcb_node_free(ezcb_node_t *n)
     n->next = ezcb_free_list;
     ezcb_free_list = n;
 #else
+    free(n->trigger);
+    n->trigger = NULL;
     free(n);
 #endif
 }
@@ -417,7 +438,11 @@ static int ezcb_register_internal
         ezcb_init();
     }
 
-#ifndef EZCB_NO_MALLOC
+#ifdef EZCB_NO_MALLOC
+    size_t trigger_length = strlen(trigger);
+    
+    if (trigger_length >= EZCB_MAX_TRIGGER_LENGTH) return -1;
+#else
     if (ezcb_count * 4 >= ezcb_buckets * 3)
     {
         if (ezcb_resize(ezcb_buckets * 2) != 0) return -1;
@@ -427,7 +452,12 @@ static int ezcb_register_internal
     ezcb_node_t* node = ezcb_node_alloc();
     if (!node) return -1;
 
-    node->trigger = trigger;
+#ifdef EZCB_NO_MALLOC
+    strncpy(node->trigger, trigger, trigger_length);
+    node->trigger[trigger_length] = '\0';
+#else
+    node->trigger = strdup(trigger);
+#endif
     node->priority = priority;
     node->once = once;
     node->fn = fn;
@@ -589,16 +619,6 @@ void ezcb_trigger
  ****************************************************************/
 #ifdef EZCB_ENABLE_ISR
 
-typedef struct ezcb_event
-{
-    const char* trigger;
-    void* data;
-} ezcb_event_t;
-
-static volatile uint8_t ezcb_evt_head;
-static volatile uint8_t ezcb_evt_tail;
-static ezcb_event_t ezcb_event_queue[EZCB_EVENT_QUEUE_SIZE];
-
 int ezcb_trigger_isr
 (
     const char* trigger,
@@ -609,8 +629,8 @@ int ezcb_trigger_isr
 
     if (next == ezcb_evt_tail) return -1; /* queue full */
 
-    ezcb_event_queue[ezcb_evt_head].trigger = trigger;
-    ezcb_event_queue[ezcb_evt_head].data = data;
+    ezcb_evt_queue[ezcb_evt_head].trigger = trigger;
+    ezcb_evt_queue[ezcb_evt_head].data = data;
     ezcb_evt_head = next;
     return 0;
 }
@@ -619,7 +639,7 @@ void ezcb_dispatch(void)
 {
     while (ezcb_evt_tail != ezcb_evt_head)
     {
-        ezcb_event_t evt = ezcb_event_queue[ezcb_evt_tail];
+        ezcb_evt_t evt = ezcb_evt_queue[ezcb_evt_tail];
         ezcb_evt_tail = (ezcb_evt_tail + 1) % EZCB_EVENT_QUEUE_SIZE;
 
         ezcb_trigger(evt.trigger, evt.data);
