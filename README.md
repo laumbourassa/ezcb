@@ -130,6 +130,7 @@ Customize behavior by defining these macros before including ezcb.h:
   - If defined, set EZCB_MAX_BUCKETS and EZCB_MAX_NODES to tune memory usage.
 - EZCB_MAX_BUCKETS — Number of hash buckets when EZCB_NO_MALLOC is enabled (default 32).
 - EZCB_MAX_NODES — Number of nodes when EZCB_NO_MALLOC is enabled (default 64).
+- EZCB_MAX_TRIGGER_LENGTH — Size of the trigger buffer when EZCB_NO_MALLOC is enabled (default 32).
 - EZCB_ENABLE_ISR — Enable ISR-safe trigger queue and dispatch.
 - EZCB_EVENT_QUEUE_SIZE — Size of ISR event queue when EZCB_ENABLE_ISR is defined (default 16).
 
@@ -139,6 +140,7 @@ Example:
 #define EZCB_NO_MALLOC
 #define EZCB_MAX_BUCKETS 16
 #define EZCB_MAX_NODES 32
+#define EZCB_MAX_TRIGGER_LENGTH 16
 #include "ezcb.h"
 ```
 
