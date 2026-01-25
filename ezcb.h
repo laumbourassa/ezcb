@@ -82,8 +82,7 @@ typedef enum
  * 
  * @return EZCB_CONTINUE to keep processing callbacks, or EZCB_STOP to halt.
  */
-typedef ezcb_result_t (*ezcb_fn_t)
-(
+typedef ezcb_result_t (*ezcb_fn_t)(
     void* ctx,
     void* data
 );
@@ -126,8 +125,7 @@ void ezcb_init(void);
  * 
  * @return 0 on success, negative value on allocation or insertion failure.
  */
-int ezcb_register
-(
+int ezcb_register(
     const char* trigger,
     uint8_t priority,
     ezcb_fn_t fn,
@@ -147,8 +145,7 @@ int ezcb_register
  * 
  * @return 0 on success, negative value on allocation or insertion failure.
  */
-int ezcb_register_once
-(
+int ezcb_register_once(
     const char* trigger,
     uint8_t priority,
     ezcb_fn_t fn,
@@ -174,8 +171,7 @@ int ezcb_register_once
  *
  * @return Number of removed callbacks.
  */
-int ezcb_unregister
-(
+int ezcb_unregister(
     const char* trigger,
     ezcb_fn_t fn,
     void* ctx
@@ -190,8 +186,7 @@ int ezcb_unregister
  * @param trigger     Trigger name to fire.
  * @param data        Caller‑supplied data passed to callbacks.
  */
-void ezcb_trigger
-(
+void ezcb_trigger(
     const char* trigger,
     void* data
 );
@@ -208,8 +203,7 @@ void ezcb_trigger
  * 
  * @return 0 on success, negative value if the queue is full.
  */
-int  ezcb_trigger_isr
-(
+int  ezcb_trigger_isr(
     const char* trigger,
     void* data
 );
@@ -311,7 +305,9 @@ static ezcb_node_t* ezcb_node_alloc(void)
 #endif
 }
 
-static void ezcb_node_free(ezcb_node_t *n)
+static void ezcb_node_free(
+    ezcb_node_t *n
+)
 {
 #ifdef EZCB_NO_MALLOC
     n->next = ezcb_free_list;
@@ -328,8 +324,7 @@ static void ezcb_node_free(ezcb_node_t *n)
  ****************************************************************/
 
 #ifndef EZCB_NO_MALLOC
-static int ezcb_resize
-(
+static int ezcb_resize(
     size_t new_size
 )
 {
@@ -424,8 +419,7 @@ void ezcb_deinit(void)
  * Register
  ****************************************************************/
 
-static int ezcb_register_internal
-(
+static int ezcb_register_internal(
     const char* trigger,
     uint8_t priority,
     ezcb_fn_t fn,
@@ -481,8 +475,7 @@ static int ezcb_register_internal
     return 0;
 }
 
-int ezcb_register
-(
+int ezcb_register(
     const char* trigger,
     uint8_t priority,
     ezcb_fn_t fn,
@@ -492,8 +485,7 @@ int ezcb_register
     return ezcb_register_internal(trigger, priority, fn, ctx, false);
 }
 
-int ezcb_register_once
-(
+int ezcb_register_once(
     const char* trigger,
     uint8_t priority,
     ezcb_fn_t fn,
@@ -507,8 +499,7 @@ int ezcb_register_once
  * Unregister
  ****************************************************************/
 
-int ezcb_unregister
-(
+int ezcb_unregister(
     const char* trigger,
     ezcb_fn_t fn,
     void* ctx
@@ -576,8 +567,7 @@ int ezcb_unregister
  * Trigger
  ****************************************************************/
 
-void ezcb_trigger
-(
+void ezcb_trigger(
     const char* trigger,
     void* data
 )
@@ -619,8 +609,7 @@ void ezcb_trigger
  ****************************************************************/
 #ifdef EZCB_ENABLE_ISR
 
-int ezcb_trigger_isr
-(
+int ezcb_trigger_isr(
     const char* trigger,
     void* data
 )
