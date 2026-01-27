@@ -36,26 +36,29 @@
 /* Disable dynamic allocation */
 // #define EZCB_NO_MALLOC
 
+/* Enable thread-safety using mutex */
+// #define EZCB_ENABLE_THREAD_SAFE
+
 /* Enable ISR-safe deferred triggering */
 // #define EZCB_ENABLE_ISR
 
 #ifdef EZCB_NO_MALLOC
-#ifndef EZCB_MAX_BUCKETS
-#define EZCB_MAX_BUCKETS 32
-#endif
-#ifndef EZCB_MAX_NODES
-#define EZCB_MAX_NODES 64
-#endif
-#ifndef EZCB_MAX_TRIGGER_LENGTH
-#define EZCB_MAX_TRIGGER_LENGTH 32
-#endif
+    #ifndef EZCB_MAX_BUCKETS
+        #define EZCB_MAX_BUCKETS 32
+    #endif
+    #ifndef EZCB_MAX_NODES
+        #define EZCB_MAX_NODES 64
+    #endif
+    #ifndef EZCB_MAX_TRIGGER_LENGTH
+        #define EZCB_MAX_TRIGGER_LENGTH 32
+    #endif
 #endif  /* EZCB_NO_MALLOC */
 
 /* Event queue size for ISR support */
 #ifdef EZCB_ENABLE_ISR
-#ifndef EZCB_EVENT_QUEUE_SIZE
-#define EZCB_EVENT_QUEUE_SIZE 16
-#endif
+    #ifndef EZCB_EVENT_QUEUE_SIZE
+        #define EZCB_EVENT_QUEUE_SIZE 16
+    #endif
 #endif  /* EZCB_ENABLE_ISR */
 
 /****************************************************************
@@ -94,8 +97,8 @@ typedef ezcb_result_t (*ezcb_fn_t)(
 /**
  * @brief Initialize the EZCB callback system.
  *
- * Sets up internal tables, free lists, and counters. Must be called
- * before any registration or triggering occurs.
+ * Sets up internal tables, free lists, and counters. Will be called
+ * automatically on first registration.
  */
 void ezcb_init(void);
 
@@ -226,7 +229,23 @@ void ezcb_dispatch(void);
 
 #include <string.h>
 #ifndef EZCB_NO_MALLOC
-#include <stdlib.h>
+    #include <stdlib.h>
+#endif
+
+#ifdef EZCB_THREAD_SAFE
+    #include <threads.h>
+    
+    #define EZCB_MUTEX_DECLARE(m)   static mtx_t (m)
+    #define EZCB_MUTEX_INIT(m)      mtx_init(&(m), mtx_plain)
+    #define EZCB_MUTEX_LOCK(m)      mtx_lock(&(m))
+    #define EZCB_MUTEX_UNLOCK(m)    mtx_unlock(&(m))
+    #define EZCB_MUTEX_DESTROY(m)   mtx_destroy(&(m))
+#else
+    #define EZCB_MUTEX_DECLARE(m)
+    #define EZCB_MUTEX_INIT(m)
+    #define EZCB_MUTEX_LOCK(m)
+    #define EZCB_MUTEX_UNLOCK(m)
+    #define EZCB_MUTEX_DESTROY(m)
 #endif
 
 /****************************************************************
@@ -260,6 +279,8 @@ static volatile uint8_t ezcb_evt_tail;
 static ezcb_evt_t ezcb_evt_queue[EZCB_EVENT_QUEUE_SIZE];
 #endif  /* EZCB_ENABLE_ISR*/
 
+EZCB_MUTEX_DECLARE(ezcb_mtx);
+
 /****************************************************************
  * Hash table state
  ****************************************************************/
@@ -289,16 +310,39 @@ static uint32_t ezcb_hash(const char* s)
 }
 
 /****************************************************************
+ * Mutex helpers
+ ****************************************************************/
+
+static inline void ezcb_lock(void)
+{
+    EZCB_MUTEX_LOCK(ezcb_mtx);
+}
+
+static inline void ezcb_unlock(void)
+{
+    EZCB_MUTEX_UNLOCK(ezcb_mtx);
+}
+
+/****************************************************************
  * Allocation
  ****************************************************************/
 
 static ezcb_node_t* ezcb_node_alloc(void)
 {
 #ifdef EZCB_NO_MALLOC
-    if (!ezcb_free_list) return NULL;
+    ezcb_lock();
+    
+    if (!ezcb_free_list)
+    {
+        ezcb_unlock();
+        return NULL;
+    }
     
     ezcb_node_t* n = ezcb_free_list;
     ezcb_free_list = n->next;
+    
+    ezcb_unlock();
+    
     return n;
 #else
     return (ezcb_node_t*) malloc(sizeof(ezcb_node_t));
@@ -310,8 +354,12 @@ static void ezcb_node_free(
 )
 {
 #ifdef EZCB_NO_MALLOC
+    ezcb_lock();
+    
     n->next = ezcb_free_list;
     ezcb_free_list = n;
+    
+    ezcb_unlock();
 #else
     free(n->trigger);
     n->trigger = NULL;
@@ -352,22 +400,31 @@ static int ezcb_resize(
 #endif
 
 /****************************************************************
- * Init
+ * Initialize
  ****************************************************************/
 
 void ezcb_init(void)
 {
+    if (ezcb_table) return;
+    
+    EZCB_MUTEX_INIT(ezcb_mtx);
+    
 #ifdef EZCB_NO_MALLOC
     ezcb_buckets = EZCB_MAX_BUCKETS;
     ezcb_table = ezcb_table_static;
     memset(ezcb_table, 0, sizeof(ezcb_table_static));
 
+    ezcb_lock();
+    
     ezcb_free_list = NULL;
     for (size_t i = 0; i < EZCB_MAX_NODES; i++)
     {
         ezcb_nodes[i].next = ezcb_free_list;
         ezcb_free_list = &ezcb_nodes[i];
     }
+    
+    ezcb_unlock();
+    
 #else
     ezcb_buckets = 16;
     ezcb_table = calloc(ezcb_buckets, sizeof(*ezcb_table));
@@ -375,10 +432,20 @@ void ezcb_init(void)
     ezcb_count = 0;
 }
 
+/****************************************************************
+ * Deinitialize
+ ****************************************************************/
+
 void ezcb_deinit(void)
 {
-    if (!ezcb_table) return;
+    if (!ezcb_table)
+    {
+        EZCB_MUTEX_DESTROY(ezcb_mtx);
+        return;
+    }
 
+    ezcb_lock();
+    
     for (size_t i = 0; i < ezcb_buckets; i++)
     {
         ezcb_node_t* n = ezcb_table[i];
@@ -408,6 +475,9 @@ void ezcb_deinit(void)
     ezcb_evt_head = 0;
     ezcb_evt_tail = 0;
 #endif  /* EZCB_ENABLE_ISR */
+
+    ezcb_unlock();
+    EZCB_MUTEX_DESTROY(ezcb_mtx);
 }
 
 /****************************************************************
@@ -432,10 +502,18 @@ static int ezcb_register_internal(
     
     if (trigger_length >= EZCB_MAX_TRIGGER_LENGTH) return -1;
 #else
+    ezcb_lock();
+    
     if (ezcb_count * 4 >= ezcb_buckets * 3)
     {
-        if (ezcb_resize(ezcb_buckets * 2) != 0) return -1;
+        if (ezcb_resize(ezcb_buckets * 2) != 0)
+        {
+            ezcb_unlock();
+            return -1;
+        }
     }
+    
+    ezcb_unlock();
 #endif
 
     ezcb_node_t* node = ezcb_node_alloc();
@@ -452,6 +530,8 @@ static int ezcb_register_internal(
     node->fn = fn;
     node->ctx = ctx;
 
+    ezcb_lock();
+    
     uint32_t idx = ezcb_hash(trigger) % ezcb_buckets;
     ezcb_node_t** cur = &ezcb_table[idx];
 
@@ -467,6 +547,8 @@ static int ezcb_register_internal(
     node->next = *cur;
     *cur = node;
     ezcb_count++;
+    
+    ezcb_unlock();
     return 0;
 }
 
@@ -504,9 +586,10 @@ int ezcb_unregister(
 
     int removed = 0;
 
-    /* Trigger specified: only one bucket to scan */
     if (trigger)
     {
+        ezcb_lock();
+        
         uint32_t idx = ezcb_hash(trigger) % ezcb_buckets;
         ezcb_node_t** cur = &ezcb_table[idx];
 
@@ -528,10 +611,12 @@ int ezcb_unregister(
             cur = &(*cur)->next;
         }
 
+        ezcb_unlock();
         return removed;
     }
+    
+    ezcb_lock();
 
-    /* Full wildcard or fn/ctx wildcard: scan all buckets */
     for (size_t i = 0; i < ezcb_buckets; i++)
     {
         ezcb_node_t** cur = &ezcb_table[i];
@@ -554,6 +639,7 @@ int ezcb_unregister(
         }
     }
 
+    ezcb_unlock();
     return removed;
 }
 
@@ -568,35 +654,98 @@ void ezcb_trigger(
 )
 {
     if (!ezcb_table) return;
-
-    uint32_t idx = ezcb_hash(trigger) % ezcb_buckets;
-    ezcb_node_t** cur = &ezcb_table[idx];
-
-    while (*cur)
+    
+    typedef struct
     {
-        ezcb_node_t* n = *cur;
+        ezcb_fn_t fn;
+        void* ctx;
+        bool once;
+        ezcb_node_t *node;
+    } snap_t;
+
+    snap_t* snap = NULL;
+    size_t snap_count = 0;
+    size_t snap_cap = 0;
+    uint32_t idx;
+    
+    ezcb_lock();
+    
+    idx = ezcb_hash(trigger) % ezcb_buckets;
+    ezcb_node_t* n = ezcb_table[idx];
+    
+    while (n)
+    {
         if (strcmp(n->trigger, trigger) == 0)
         {
-            ezcb_result_t r = n->fn(n->ctx, data);
-
-            if (n->once)
+#ifndef EZCB_NO_MALLOC
+            if (snap_count >= snap_cap)
             {
-                *cur = n->next;
-                ezcb_node_free(n);
-                ezcb_count--;
+                size_t new_cap = snap_cap ? snap_cap * 2 : 8;
+                snap_t *new_snap = realloc(snap, new_cap * sizeof(*new_snap));
+                if (!new_snap) break;
+                snap = new_snap;
+                snap_cap = new_cap;
             }
-            else
+#else
+            if (snap_count >= snap_cap)
             {
-                cur = &n->next;
+                static snap_t snap_buf[EZCB_MAX_NODES];
+                snap = snap_buf;
+                snap_cap = EZCB_MAX_NODES;
+                if (snap_count >= snap_cap) break;
             }
-
-            if (r == EZCB_STOP) return;
+#endif
+            snap[snap_count].fn = n->fn;
+            snap[snap_count].ctx = n->ctx;
+            snap[snap_count].once = n->once;
+            snap[snap_count].node = n;
+            snap_count++;
         }
-        else
-        {
-            cur = &(*cur)->next;
-        }
+        
+        n = n->next;
     }
+    
+    ezcb_unlock();
+
+    for (size_t i = 0; i < snap_count; ++i)
+    {
+        ezcb_result_t r = snap[i].fn(snap[i].ctx, data);
+
+        if (snap[i].once)
+        {
+            ezcb_lock();
+            
+            ezcb_node_t** cur = &ezcb_table[idx];
+            
+            while (*cur)
+            {
+                if (*cur == snap[i].node)
+                {
+                    ezcb_node_t* rem = *cur;
+                    *cur = rem->next;
+#ifdef EZCB_NO_MALLOC
+                    rem->next = ezcb_free_list;
+                    ezcb_free_list = rem;
+#else
+                    free(rem->trigger);
+                    free(rem);
+#endif
+                    ezcb_count--;
+                    break;
+                }
+                
+                cur = &(*cur)->next;
+            }
+            
+            ezcb_unlock();
+        }
+
+        if (r == EZCB_STOP) break;
+    }
+
+#ifndef EZCB_NO_MALLOC
+    free(snap);
+#endif
 }
 
 /****************************************************************
