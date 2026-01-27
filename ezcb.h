@@ -191,12 +191,12 @@ void ezcb_trigger(
     void* data
 );
 
-#ifdef EZCB_ENABLE_ISR
 /**
  * @brief Queue a trigger event from an ISR context.
  *
  * Adds a trigger event to the ISR‑safe queue. The event will be
  * processed later by ezcb_dispatch(). Non‑blocking and safe for ISR use.
+ * Define EZCB_ENABLE_ISR for implementation.
  *
  * @param trigger     Trigger name to enqueue.
  * @param data        Caller‑supplied data pointer.
@@ -210,12 +210,12 @@ int  ezcb_trigger_isr(
 
 /**
  * @brief Dispatch queued ISR trigger events.
+ * Define EZCB_ENABLE_ISR for implementation.
  *
  * Processes all pending events queued by ezcb_trigger_isr().
  * Should be called from the main loop or a safe execution context.
  */
 void ezcb_dispatch(void);
-#endif  /* EZCB_ENABLE_ISR*/
 
 #endif  /* EZCB_H */
 
