@@ -37,7 +37,7 @@
 // #define EZCB_NO_MALLOC
 
 /* Enable thread-safety using mutex */
-// #define EZCB_ENABLE_THREAD_SAFE
+// #define EZCB_THREAD_SAFE
 
 /* Enable ISR-safe deferred triggering */
 // #define EZCB_ENABLE_ISR
