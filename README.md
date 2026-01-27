@@ -21,7 +21,7 @@
 - Standard headers: stdint.h, stddef.h, stdbool.h
 - Optional: define EZCB_ENABLE_ISR to enable ISR-safe triggering
 - Optional: define EZCB_NO_MALLOC to compile without dynamic allocation
-- Optional: define EZCB_THREAD_SAFE to enable system mutexes
+- Optional: define EZCB_THREAD_SAFE to enable EZCB mutexes (note: this doesn't make the callback thread safe themselves, only the dispatcher)
 
 ## Quick Start
 
