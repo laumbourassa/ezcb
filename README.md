@@ -17,9 +17,11 @@
 ## Requirements
 
 - C99 (or later)
+- <threads.h> when EZCB_THREAD_SAFE is defined
 - Standard headers: stdint.h, stddef.h, stdbool.h
 - Optional: define EZCB_ENABLE_ISR to enable ISR-safe triggering
 - Optional: define EZCB_NO_MALLOC to compile without dynamic allocation
+- Optional: define EZCB_THREAD_SAFE to enable system mutexes
 
 ## Quick Start
 
@@ -126,13 +128,13 @@ ezcb_dispatch();
 
 Customize behavior by defining these macros before including ezcb.h:
 
-- EZCB_NO_MALLOC — Disable dynamic allocation and use static tables.
-  - If defined, set EZCB_MAX_BUCKETS and EZCB_MAX_NODES to tune memory usage.
-- EZCB_MAX_BUCKETS — Number of hash buckets when EZCB_NO_MALLOC is enabled (default 32).
-- EZCB_MAX_NODES — Number of nodes when EZCB_NO_MALLOC is enabled (default 64).
-- EZCB_MAX_TRIGGER_LENGTH — Size of the trigger buffer when EZCB_NO_MALLOC is enabled (default 32).
-- EZCB_ENABLE_ISR — Enable ISR-safe trigger queue and dispatch.
-- EZCB_EVENT_QUEUE_SIZE — Size of ISR event queue when EZCB_ENABLE_ISR is defined (default 16).
+- EZCB_NO_MALLOC - Disable dynamic allocation and use static tables.
+- EZCB_MAX_BUCKETS - Number of hash buckets when EZCB_NO_MALLOC is enabled (default 32).
+- EZCB_MAX_NODES - Number of nodes when EZCB_NO_MALLOC is enabled (default 64).
+- EZCB_MAX_TRIGGER_LENGTH - Size of the trigger buffer when EZCB_NO_MALLOC is enabled (default 32).
+- EZCB_ENABLE_ISR - Enable ISR-safe trigger queue and dispatch.
+- EZCB_EVENT_QUEUE_SIZE - Size of ISR event queue when EZCB_ENABLE_ISR is defined (default 16).
+- EZCB_THREAD_SAFE - Enable mutexes for EZCB.
 
 Example:
 
