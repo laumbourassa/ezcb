@@ -330,8 +330,6 @@ static inline void ezcb_unlock(void)
 static ezcb_node_t* ezcb_node_alloc(void)
 {
 #ifdef EZCB_NO_MALLOC
-    ezcb_lock();
-    
     if (!ezcb_free_list)
     {
         ezcb_unlock();
@@ -340,8 +338,6 @@ static ezcb_node_t* ezcb_node_alloc(void)
     
     ezcb_node_t* n = ezcb_free_list;
     ezcb_free_list = n->next;
-    
-    ezcb_unlock();
     
     return n;
 #else
@@ -492,6 +488,8 @@ static int ezcb_register_internal(
     bool once
 )
 {
+	ezcb_lock();
+	
     if (!ezcb_table)
     {
         ezcb_init();
@@ -500,9 +498,12 @@ static int ezcb_register_internal(
 #ifdef EZCB_NO_MALLOC
     size_t trigger_length = strlen(trigger);
     
-    if (trigger_length >= EZCB_MAX_TRIGGER_LENGTH) return -1;
+    if (trigger_length >= EZCB_MAX_TRIGGER_LENGTH)
+	{
+		ezcb_unlock();
+		return -1;
+	}
 #else
-    ezcb_lock();
     
     if (ezcb_count * 4 >= ezcb_buckets * 3)
     {
@@ -512,12 +513,15 @@ static int ezcb_register_internal(
             return -1;
         }
     }
-    
-    ezcb_unlock();
+	
 #endif
 
     ezcb_node_t* node = ezcb_node_alloc();
-    if (!node) return -1;
+    if (!node)
+	{
+		ezcb_unlock();
+		return -1;
+	}
 
 #ifdef EZCB_NO_MALLOC
     strncpy(node->trigger, trigger, trigger_length);
@@ -529,8 +533,6 @@ static int ezcb_register_internal(
     node->once = once;
     node->fn = fn;
     node->ctx = ctx;
-
-    ezcb_lock();
     
     uint32_t idx = ezcb_hash(trigger) % ezcb_buckets;
     ezcb_node_t** cur = &ezcb_table[idx];
@@ -582,14 +584,18 @@ int ezcb_unregister(
     void* ctx
 )
 {
-    if (!ezcb_table) return 0;
+    ezcb_lock();
+	
+    if (!ezcb_table)
+	{
+		ezcb_unlock();
+		return 0;
+	}
 
     int removed = 0;
 
     if (trigger)
     {
-        ezcb_lock();
-        
         uint32_t idx = ezcb_hash(trigger) % ezcb_buckets;
         ezcb_node_t** cur = &ezcb_table[idx];
 
@@ -614,8 +620,6 @@ int ezcb_unregister(
         ezcb_unlock();
         return removed;
     }
-    
-    ezcb_lock();
 
     for (size_t i = 0; i < ezcb_buckets; i++)
     {
@@ -653,100 +657,49 @@ void ezcb_trigger(
     void* data
 )
 {
-    if (!ezcb_table) return;
-    
-    typedef struct
-    {
-        ezcb_fn_t fn;
-        void* ctx;
-        bool once;
-        ezcb_node_t *node;
-    } snap_t;
+	ezcb_lock();
+	
+    if (!ezcb_table)
+	{
+		ezcb_unlock();
+		return;
+	}
 
-    snap_t* snap = NULL;
-    size_t snap_count = 0;
-    size_t snap_cap = 0;
-    uint32_t idx;
-    
-    ezcb_lock();
-    
-    idx = ezcb_hash(trigger) % ezcb_buckets;
-    ezcb_node_t* n = ezcb_table[idx];
-    
-    while (n)
+    uint32_t idx = ezcb_hash(trigger) % ezcb_buckets;
+    ezcb_node_t** cur = &ezcb_table[idx];
+
+    while (*cur)
     {
+        ezcb_node_t* n = *cur;
+
         if (strcmp(n->trigger, trigger) == 0)
         {
-#ifndef EZCB_NO_MALLOC
-            if (snap_count >= snap_cap)
-            {
-                size_t new_cap = snap_cap ? snap_cap * 2 : 8;
-                snap_t *new_snap = realloc(snap, new_cap * sizeof(*new_snap));
-                if (!new_snap) break;
-                snap = new_snap;
-                snap_cap = new_cap;
-            }
-#else
-            if (snap_count >= snap_cap)
-            {
-                static snap_t snap_buf[EZCB_MAX_NODES];
-                snap = snap_buf;
-                snap_cap = EZCB_MAX_NODES;
-                if (snap_count >= snap_cap) break;
-            }
-#endif
-            snap[snap_count].fn = n->fn;
-            snap[snap_count].ctx = n->ctx;
-            snap[snap_count].once = n->once;
-            snap[snap_count].node = n;
-            snap_count++;
-        }
-        
-        n = n->next;
-    }
-    
-    ezcb_unlock();
+            ezcb_result_t r = n->fn(n->ctx, data);
 
-    for (size_t i = 0; i < snap_count; ++i)
-    {
-        ezcb_result_t r = snap[i].fn(snap[i].ctx, data);
-
-        if (snap[i].once)
-        {
-            ezcb_lock();
-            
-            ezcb_node_t** cur = &ezcb_table[idx];
-            
-            while (*cur)
+            if (n->once)
             {
-                if (*cur == snap[i].node)
-                {
-                    ezcb_node_t* rem = *cur;
-                    *cur = rem->next;
+                *cur = n->next;
 #ifdef EZCB_NO_MALLOC
-                    rem->next = ezcb_free_list;
-                    ezcb_free_list = rem;
+                n->next = ezcb_free_list;
+                ezcb_free_list = n;
 #else
-                    free(rem->trigger);
-                    free(rem);
+                free(n->trigger);
+                free(n);
 #endif
-                    ezcb_count--;
-                    break;
-                }
-                
-                cur = &(*cur)->next;
+                ezcb_count--;
+                if (r == EZCB_STOP) break;
+                continue; 
             }
-            
-            ezcb_unlock();
+
+            if (r == EZCB_STOP) break;
         }
 
-        if (r == EZCB_STOP) break;
+        cur = &(*cur)->next;
     }
 
-#ifndef EZCB_NO_MALLOC
-    free(snap);
-#endif
+    ezcb_unlock();
 }
+
 
 /****************************************************************
  * ISR support
