@@ -235,13 +235,11 @@ void ezcb_dispatch(void);
 #ifdef EZCB_THREAD_SAFE
     #include <threads.h>
     
-    #define EZCB_MUTEX_DECLARE(m)   static mtx_t (m)
     #define EZCB_MUTEX_INIT(m)      mtx_init(&(m), mtx_plain)
     #define EZCB_MUTEX_LOCK(m)      mtx_lock(&(m))
     #define EZCB_MUTEX_UNLOCK(m)    mtx_unlock(&(m))
     #define EZCB_MUTEX_DESTROY(m)   mtx_destroy(&(m))
 #else
-    #define EZCB_MUTEX_DECLARE(m)
     #define EZCB_MUTEX_INIT(m)
     #define EZCB_MUTEX_LOCK(m)
     #define EZCB_MUTEX_UNLOCK(m)
@@ -279,7 +277,9 @@ static volatile uint8_t ezcb_evt_tail;
 static ezcb_evt_t ezcb_evt_queue[EZCB_EVENT_QUEUE_SIZE];
 #endif  /* EZCB_ENABLE_ISR*/
 
-EZCB_MUTEX_DECLARE(ezcb_mtx);
+#ifdef EZCB_THREAD_SAFE
+static mtx_t ezcb_mtx;
+#endif /* EZCB_THREAD_SAFE */
 
 /****************************************************************
  * Hash table state
