@@ -302,12 +302,82 @@ static ezcb_node_t* ezcb_table_static[EZCB_MAX_BUCKETS];
 
 static uint32_t ezcb_hash(const char* s)
 {
-    uint32_t h = 5381;
-    while (*s)
+    const uint8_t* p = (const uint8_t*) s;
+    size_t len = strlen(s);
+
+    const uint32_t PRIME32_1 = 0x9E3779B1U;
+    const uint32_t PRIME32_2 = 0x85EBCA77U;
+    const uint32_t PRIME32_3 = 0xC2B2AE3DU;
+    const uint32_t PRIME32_4 = 0x27D4EB2FU;
+    const uint32_t PRIME32_5 = 0x165667B1U;
+
+    uint32_t h32;
+
+    if (len >= 16)
     {
-        h = ((h << 5) + h) ^ (uint8_t)*s++;
+        const uint8_t* const limit = p + len - 16;
+        uint32_t v1 = PRIME32_1 + PRIME32_2;
+        uint32_t v2 = PRIME32_2;
+        uint32_t v3 = 0;
+        uint32_t v4 = -PRIME32_1;
+
+        do
+        {
+            v1 += (*(const uint32_t*) p) * PRIME32_2;
+            v1 = (v1 << 13) | (v1 >> 19);
+            v1 *= PRIME32_1;
+            p += 4;
+
+            v2 += (*(const uint32_t*) p) * PRIME32_2;
+            v2 = (v2 << 13) | (v2 >> 19);
+            v2 *= PRIME32_1;
+            p += 4;
+
+            v3 += (*(const uint32_t*) p) * PRIME32_2;
+            v3 = (v3 << 13) | (v3 >> 19);
+            v3 *= PRIME32_1;
+            p += 4;
+
+            v4 += (*(const uint32_t*) p) * PRIME32_2;
+            v4 = (v4 << 13) | (v4 >> 19);
+            v4 *= PRIME32_1;
+            p += 4;
+
+        } while (p <= limit);
+
+        h32 = ((v1 << 1) | (v1 >> 31))
+            + ((v2 << 7) | (v2 >> 25))
+            + ((v3 << 12) | (v3 >> 20))
+            + ((v4 << 18) | (v4 >> 14));
     }
-    return h;
+    else
+    {
+        h32 = PRIME32_5;
+    }
+
+    h32 += (uint32_t)len;
+
+    while ((p + 4) <= (const uint8_t*) s + len)
+    {
+        h32 += (*(const uint32_t*) p) * PRIME32_3;
+        h32 = ((h32 << 17) | (h32 >> 15)) * PRIME32_4;
+        p += 4;
+    }
+
+    while (p < (const uint8_t*) s + len)
+    {
+        h32 += (*p) * PRIME32_5;
+        h32 = ((h32 << 11) | (h32 >> 21)) * PRIME32_1;
+        p++;
+    }
+
+    h32 ^= h32 >> 15;
+    h32 *= PRIME32_2;
+    h32 ^= h32 >> 13;
+    h32 *= PRIME32_3;
+    h32 ^= h32 >> 16;
+
+    return h32;
 }
 
 /****************************************************************
