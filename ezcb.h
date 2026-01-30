@@ -25,6 +25,7 @@
 #ifndef EZCB_H
 #define EZCB_H
 
+#include <assert.h>
 #include <stdint.h>
 #include <stddef.h>
 #include <stdbool.h>
@@ -235,7 +236,7 @@ void ezcb_dispatch(void);
 #ifdef EZCB_THREAD_SAFE
     #include <threads.h>
     
-    #define EZCB_MUTEX_INIT(m)      mtx_init(&(m), mtx_plain)
+    #define EZCB_MUTEX_INIT(m)      mtx_init(&(m), mtx_plain | mtx_recursive)
     #define EZCB_MUTEX_LOCK(m)      mtx_lock(&(m))
     #define EZCB_MUTEX_UNLOCK(m)    mtx_unlock(&(m))
     #define EZCB_MUTEX_DESTROY(m)   mtx_destroy(&(m))
@@ -488,6 +489,9 @@ static int ezcb_register_internal(
     bool once
 )
 {
+    assert(trigger != NULL);
+    assert(fn != NULL);
+    
 	ezcb_lock();
 	
     if (!ezcb_table)
@@ -657,6 +661,8 @@ void ezcb_trigger(
     void* data
 )
 {
+    assert(trigger != NULL);
+    
 	ezcb_lock();
 	
     if (!ezcb_table)
@@ -711,6 +717,8 @@ int ezcb_trigger_isr(
     void* data
 )
 {
+    assert(trigger != NULL);
+    
     uint8_t next = (ezcb_evt_head + 1) % EZCB_EVENT_QUEUE_SIZE;
 
     if (next == ezcb_evt_tail) return -1;
